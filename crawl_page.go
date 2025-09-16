@@ -1,4 +1,4 @@
-package main
+package crawler
 
 //TODO: Error setting exit on callback
 //TODO: Crawler does not honor given limits. Please Fix
