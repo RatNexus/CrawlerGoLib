@@ -18,17 +18,17 @@ import (
 )
 
 type LoggingOptions struct {
-	DoLogging    bool
-	DoStart      bool
-	DoEnd        bool
-	DoSummary    bool
-	DoPageAbyss  bool
-	DoDepthAbyss bool
-	DoDepth      bool
-	DoWidth      bool
-	DoErrors     bool
-	DoPages      bool
-	DoIdRoutine  bool
+	DoLogging    bool `json:"doLogging"`
+	DoStart      bool `json:"doStart"`
+	DoEnd        bool `json:"doEnd"`
+	DoSummary    bool `json:"doSummary"`
+	DoPageAbyss  bool `json:"doPageAbyss"`
+	DoDepthAbyss bool `json:"doDepthAbyss"`
+	DoDepth      bool `json:"doDepth"`
+	DoWidth      bool `json:"doWidth"`
+	DoErrors     bool `json:"doErrors"`
+	DoPages      bool `json:"doPages"`
+	DoIdRoutine  bool `json:"doIdRoutine"`
 }
 
 func (lo LoggingOptions) String() string {
