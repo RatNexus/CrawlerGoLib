@@ -1,5 +1,6 @@
 package main
 
+//TODO: Error setting exit on callback
 //TODO: Crawler does not honor given limits. Please Fix
 //TODO:	Implement Robots.txt support
 //TODO: Implement and Use resolveRelativeURLs
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -29,6 +31,23 @@ type LoggingOptions struct {
 	DoIdRoutine  bool
 }
 
+func (lo LoggingOptions) String() string {
+	var ret string
+	ret += fmt.Sprintf("\nDoLogging: %t", lo.DoLogging)
+	ret += fmt.Sprintf("\nDoStart: %t", lo.DoStart)
+	ret += fmt.Sprintf("\nDoEnd: %t", lo.DoEnd)
+	ret += fmt.Sprintf("\nDoSummary: %t", lo.DoSummary)
+	ret += fmt.Sprintf("\nDoPageAbyss: %t", lo.DoPageAbyss)
+	ret += fmt.Sprintf("\nDoDepthAbyss: %t", lo.DoDepthAbyss)
+	ret += fmt.Sprintf("\nDoDepth: %t", lo.DoDepth)
+	ret += fmt.Sprintf("\nDoWidth: %t", lo.DoWidth)
+	ret += fmt.Sprintf("\nDoErrors: %t", lo.DoErrors)
+	ret += fmt.Sprintf("\nDoPages: %t", lo.DoPages)
+	ret += fmt.Sprintf("\nDoIdRoutine: %t", lo.DoIdRoutine)
+
+	return ret
+}
+
 type Config struct {
 	baseURL            *url.URL
 	concurrencyControl chan struct{}
@@ -40,6 +59,19 @@ type Config struct {
 	lo                 *LoggingOptions
 	storePage          func(url, html string, siteLinks, imgLinks []string) error
 	isPageStored       func(url string) (bool, error)
+}
+
+func (cfg Config) String() string {
+	var ret string
+	ret += fmt.Sprintf("\nbaseURL: \"%s\"", cfg.baseURL)
+	ret += fmt.Sprintf("\nmaxDepth: %d", cfg.maxDepth)
+	ret += fmt.Sprintf("\nmaxPages: %d", cfg.maxPages)
+	ret += fmt.Sprintf("\nmaxGoroutines: %d", cap(cfg.concurrencyControl))
+	loString := cfg.lo.String()
+	loString = strings.ReplaceAll(loString, "\n", "\n  ")
+	ret += fmt.Sprintf("\nloggingOptions: {%s\n}", loString)
+
+	return ret
 }
 
 func ConfigSetup(
@@ -79,9 +111,9 @@ func (cfg *Config) CrawlPage(rawCurrentURL string) {
 
 	fmt.Println("tis workin")
 	if cfg.lo.DoLogging && cfg.lo.DoStart {
-		// make this message variable depending on other logging options
-		cfg.log.Printf("starting crawl of: \"%s\" with max depth of %d\n",
-			cfg.baseURL, cfg.maxDepth)
+		cfgString := cfg.String()
+		cfgString = strings.ReplaceAll(cfgString, "\n", "\n  ")
+		cfg.log.Printf("starting crawl of: \"%s\" with config: {%s\n}", cfg.baseURL, cfgString)
 		cfg.log.Print("\n----------\n\n")
 	}
 
