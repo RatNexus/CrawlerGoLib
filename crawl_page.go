@@ -48,7 +48,7 @@ func (lo LoggingOptions) String() string {
 	return ret
 }
 
-type Config struct {
+type Crawler struct {
 	baseURL            *url.URL
 	concurrencyControl chan struct{}
 	wg                 *sync.WaitGroup
@@ -61,78 +61,85 @@ type Config struct {
 	isPageStored       func(url string) (bool, error)
 }
 
-func (cfg Config) String() string {
+type Config struct {
+	BaseURL        string          `json:"baseUrl"`
+	MaxDepth       int             `json:"maxDepth"`
+	MaxPages       int             `json:"maxPages"`
+	MaxGoroutines  int             `json:"maxGoroutines"`
+	LoggingOptions *LoggingOptions `json:"loggingOptions"`
+	Logger         *log.Logger
+}
+
+func (crw Crawler) String() string {
 	var ret string
-	ret += fmt.Sprintf("\nbaseURL: \"%s\"", cfg.baseURL)
-	ret += fmt.Sprintf("\nmaxDepth: %d", cfg.maxDepth)
-	ret += fmt.Sprintf("\nmaxPages: %d", cfg.maxPages)
-	ret += fmt.Sprintf("\nmaxGoroutines: %d", cap(cfg.concurrencyControl))
-	loString := cfg.lo.String()
+	ret += fmt.Sprintf("\nbaseURL: \"%s\"", crw.baseURL)
+	ret += fmt.Sprintf("\nmaxDepth: %d", crw.maxDepth)
+	ret += fmt.Sprintf("\nmaxPages: %d", crw.maxPages)
+	ret += fmt.Sprintf("\nmaxGoroutines: %d", cap(crw.concurrencyControl))
+	loString := crw.lo.String()
 	loString = strings.ReplaceAll(loString, "\n", "\n  ")
 	ret += fmt.Sprintf("\nloggingOptions: {%s\n}", loString)
 
 	return ret
 }
 
-func ConfigSetup(
-	maxDepth int, maxPages int32, maxGoroutines int,
-	baseURL string, logger *log.Logger, logOptions *LoggingOptions,
+func (cfg *Config) MakeCrawler(
 	storePage func(url, html string, siteLinks, imgLinks []string) error,
-	isPageStored func(url string) (bool, error)) (cfg *Config, err error) {
+	isPageStored func(url string) (bool, error)) (crw *Crawler, err error) {
 
-	cfg = &Config{}
-	cfg.wg = &sync.WaitGroup{}
+	crw = &Crawler{}
+	crw.wg = &sync.WaitGroup{}
 
-	cfg.baseURL, err = url.Parse(baseURL)
+	crw.baseURL, err = url.Parse(cfg.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("Base url parse error: %v", err)
 	}
 
-	cfg.concurrencyControl = make(chan struct{}, maxGoroutines)
-	cfg.maxDepth = maxDepth
-	cfg.maxPages = maxPages
-	cfg.storePage = storePage
-	cfg.isPageStored = isPageStored
-	cfg.lo = logOptions
-	cfg.log = logger
+	crw.concurrencyControl = make(chan struct{}, cfg.MaxGoroutines)
+	crw.maxDepth = cfg.MaxDepth
+	crw.maxPages = int32(cfg.MaxPages)
+	crw.storePage = storePage
+	crw.isPageStored = isPageStored
+	crw.lo = cfg.LoggingOptions
+	crw.log = cfg.Logger
 
-	return cfg, nil
+	return crw, nil
 }
 
 func resolveRelativeURLs() {}
 
-func (cfg *Config) logError(message, rawCurrentURL string, err error) {
-	cfg.log.Printf(" - error  : \"%s\" :ERROR: %s%s\n", rawCurrentURL, message, err)
+func (crw *Crawler) logError(message, rawCurrentURL string, err error) {
+	crw.log.Printf(" - error  : \"%s\" :ERROR: %s%s\n", rawCurrentURL, message, err)
 }
 
-func (cfg *Config) CrawlPage(rawCurrentURL string) {
+func (crw *Crawler) CrawlPage(rawCurrentURL string) {
 	var currentDepth int
 	var pageCount int32
 
 	fmt.Println("tis workin")
-	if cfg.lo.DoLogging && cfg.lo.DoStart {
-		cfgString := cfg.String()
+	if crw.lo.DoLogging && crw.lo.DoStart {
+		cfgString := crw.String()
 		cfgString = strings.ReplaceAll(cfgString, "\n", "\n  ")
-		cfg.log.Printf("starting crawl of: \"%s\" with config: {%s\n}", cfg.baseURL, cfgString)
-		cfg.log.Print("\n----------\n\n")
+		crw.log.Printf("starting crawl of: \"%s\" with config: {%s\n}", crw.baseURL, cfgString)
+		crw.log.Print("\n----------\n\n")
 	}
 
-	cfg.concurrencyControl <- struct{}{}
-	cfg.wg.Add(1)
-	go cfg.internalCrawlPage(rawCurrentURL, currentDepth, &pageCount)
-	cfg.wg.Wait()
+	crw.concurrencyControl <- struct{}{}
+	crw.wg.Add(1)
+	go crw.internalCrawlPage(rawCurrentURL, currentDepth, &pageCount)
+	crw.wg.Wait()
 
-	if cfg.lo.DoLogging && cfg.lo.DoEnd {
-		cfg.log.Print("\n----------\n\n")
-		cfg.log.Println("end of crawl")
-		cfg.log.Print("\n----------\n\n")
+	if crw.lo.DoLogging && crw.lo.DoEnd {
+		crw.log.Print("\n----------\n\n")
+		crw.log.Println("end of crawl")
+		crw.log.Print("\n----------\n\n")
 	}
 }
 
 // Todo: add resoleRelativeURLs here
-func (cfg *Config) internalCrawlPage(rawCurrentURL string, currentDepth int, pageCount *int32) {
-	defer cfg.wg.Done()
-	defer func() { <-cfg.concurrencyControl }()
+func (crw *Crawler) internalCrawlPage(rawCurrentURL string, currentDepth int, pageCount *int32) {
+	defer crw.wg.Done()
+	defer func() { <-crw.concurrencyControl }()
 	atomic.AddInt32(pageCount, 1)
 
 	currentDepth += 1
@@ -140,8 +147,8 @@ func (cfg *Config) internalCrawlPage(rawCurrentURL string, currentDepth int, pag
 	// enforce same host for base and current URLs, Part 1
 	parsedCurrentUrl, err := url.Parse(rawCurrentURL)
 	if err != nil {
-		if cfg.lo.DoLogging && cfg.lo.DoErrors {
-			cfg.logError("current url parse error: ", rawCurrentURL, err)
+		if crw.lo.DoLogging && crw.lo.DoErrors {
+			crw.logError("current url parse error: ", rawCurrentURL, err)
 		}
 		return
 	}
@@ -149,51 +156,51 @@ func (cfg *Config) internalCrawlPage(rawCurrentURL string, currentDepth int, pag
 	// normalise current URL
 	currentUrl, err := normalizeURL(rawCurrentURL)
 	if err != nil {
-		if cfg.lo.DoLogging && cfg.lo.DoErrors {
-			cfg.logError("normalise current url error: ", rawCurrentURL, err)
+		if crw.lo.DoLogging && crw.lo.DoErrors {
+			crw.logError("normalise current url error: ", rawCurrentURL, err)
 		}
 		return
 	}
 
 	// check if page is already crawled
-	doDepthLog := cfg.lo.DoLogging && cfg.lo.DoDepth
-	exists, err := cfg.isPageStored(currentUrl)
+	doDepthLog := crw.lo.DoLogging && crw.lo.DoDepth
+	exists, err := crw.isPageStored(currentUrl)
 	if err != nil {
-		cfg.logError("isPageStored callback error: ", currentUrl, err)
+		crw.logError("isPageStored callback error: ", currentUrl, err)
 	}
 	if exists {
 		if doDepthLog {
-			cfg.log.Printf(" - depth %d: \"%s\"\n", currentDepth, rawCurrentURL)
+			crw.log.Printf(" - depth %d: \"%s\"\n", currentDepth, rawCurrentURL)
 		}
 		return
 	} else {
 		if doDepthLog {
-			cfg.log.Printf(" - DEPTH %d: \"%s\"\n", currentDepth, rawCurrentURL)
+			crw.log.Printf(" - DEPTH %d: \"%s\"\n", currentDepth, rawCurrentURL)
 		}
 	}
 
 	atomInt := atomic.LoadInt32(pageCount)
-	if atomInt > cfg.maxPages && atomInt <= 0 {
-		if cfg.lo.DoLogging && cfg.lo.DoPageAbyss {
-			cfg.log.Printf("   aby-s: \"%s\"\n", rawCurrentURL)
+	if atomInt > crw.maxPages && atomInt <= 0 {
+		if crw.lo.DoLogging && crw.lo.DoPageAbyss {
+			crw.log.Printf("   aby-s: \"%s\"\n", rawCurrentURL)
 		}
 		return
 	}
 
-	if cfg.maxDepth > 0 && currentDepth > cfg.maxDepth {
-		if cfg.lo.DoLogging && cfg.lo.DoDepthAbyss {
-			cfg.log.Printf("   abyss: \"%s\"\n", rawCurrentURL)
+	if crw.maxDepth > 0 && currentDepth > crw.maxDepth {
+		if crw.lo.DoLogging && crw.lo.DoDepthAbyss {
+			crw.log.Printf("   abyss: \"%s\"\n", rawCurrentURL)
 		}
 		return
 	}
 
 	// enforce same host for base and current URLs, Part 2
-	if cfg.baseURL.Host != parsedCurrentUrl.Host {
-		if cfg.lo.DoLogging && cfg.lo.DoErrors {
+	if crw.baseURL.Host != parsedCurrentUrl.Host {
+		if crw.lo.DoLogging && crw.lo.DoErrors {
 			err := fmt.Errorf(
 				"host difference: Base: \"%s\", Current: \"%s\"",
-				cfg.baseURL.Host, parsedCurrentUrl.Host)
-			cfg.logError("", rawCurrentURL, err)
+				crw.baseURL.Host, parsedCurrentUrl.Host)
+			crw.logError("", rawCurrentURL, err)
 		}
 		return
 	}
@@ -201,33 +208,33 @@ func (cfg *Config) internalCrawlPage(rawCurrentURL string, currentDepth int, pag
 	// parse links of current webpage
 	webpage, err := getHTML(rawCurrentURL)
 	if err != nil {
-		if cfg.lo.DoLogging && cfg.lo.DoErrors {
-			cfg.logError("getHTML error: ", rawCurrentURL, err)
+		if crw.lo.DoLogging && crw.lo.DoErrors {
+			crw.logError("getHTML error: ", rawCurrentURL, err)
 		}
 		return
 	}
 	gotURLs, err := getURLsFromHTML(webpage, rawCurrentURL)
 	if err != nil {
-		if cfg.lo.DoLogging && cfg.lo.DoErrors {
-			cfg.logError("getURLsFromHTML error: ", rawCurrentURL, err)
+		if crw.lo.DoLogging && crw.lo.DoErrors {
+			crw.logError("getURLsFromHTML error: ", rawCurrentURL, err)
 		}
 		return
 	}
 
 	gotImgLinks := []string{}
 
-	cfg.storePage(currentUrl, webpage, gotURLs, gotImgLinks)
+	crw.storePage(currentUrl, webpage, gotURLs, gotImgLinks)
 
 	// go deeper
-	func() { <-cfg.concurrencyControl }()
+	func() { <-crw.concurrencyControl }()
 	for _, v := range gotURLs {
-		cfg.concurrencyControl <- struct{}{}
-		cfg.wg.Add(1)
+		crw.concurrencyControl <- struct{}{}
+		crw.wg.Add(1)
 
-		if cfg.lo.DoLogging && cfg.lo.DoWidth {
-			cfg.log.Printf("   width  : \"%s\"", v)
+		if crw.lo.DoLogging && crw.lo.DoWidth {
+			crw.log.Printf("   width  : \"%s\"", v)
 		}
-		go cfg.internalCrawlPage(v, currentDepth, pageCount)
+		go crw.internalCrawlPage(v, currentDepth, pageCount)
 	}
-	cfg.concurrencyControl <- struct{}{}
+	crw.concurrencyControl <- struct{}{}
 }
